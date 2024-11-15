@@ -12,7 +12,7 @@ import {
   TerminateInstancesCommand,
 } from '@aws-sdk/client-ec2';
 import { GetParameterCommand, GetParameterResult, PutParameterCommand, SSMClient } from '@aws-sdk/client-ssm';
-import { tracer } from '@terraform-aws-github-runner/aws-powertools-util';
+import { tracer } from '@aws-github-runner/aws-powertools-util';
 import { mockClient } from 'aws-sdk-client-mock';
 import 'aws-sdk-client-mock-jest';
 
@@ -383,7 +383,7 @@ describe('create runner with errors', () => {
   it('test now error is thrown if an instance is created', async () => {
     createFleetMockWithErrors(['NonMappedError'], ['i-123']);
 
-    expect(await createRunner(createRunnerConfig(defaultRunnerConfig))).resolves;
+    await expect(createRunner(createRunnerConfig(defaultRunnerConfig))).resolves.toEqual(['i-123']);
     expect(mockEC2Client).toHaveReceivedCommandWith(
       CreateFleetCommand,
       expectedCreateFleetRequest(defaultExpectedFleetRequestValues),

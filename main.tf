@@ -51,12 +51,6 @@ resource "aws_sqs_queue_policy" "build_queue_policy" {
   policy    = data.aws_iam_policy_document.deny_unsecure_transport.json
 }
 
-resource "aws_sqs_queue_policy" "webhook_events_workflow_job_queue_policy" {
-  count     = var.enable_workflow_job_events_queue ? 1 : 0
-  queue_url = aws_sqs_queue.webhook_events_workflow_job_queue[0].id
-  policy    = data.aws_iam_policy_document.deny_unsecure_transport.json
-}
-
 resource "aws_sqs_queue" "queued_builds" {
   name                        = "${var.prefix}-queued-builds${var.enable_fifo_build_queue ? ".fifo" : ""}"
   delay_seconds               = var.delay_webhook_event
@@ -69,24 +63,6 @@ resource "aws_sqs_queue" "queued_builds" {
     deadLetterTargetArn = aws_sqs_queue.queued_builds_dlq[0].arn,
     maxReceiveCount     = var.redrive_build_queue.maxReceiveCount
   }) : null
-
-  sqs_managed_sse_enabled           = var.queue_encryption.sqs_managed_sse_enabled
-  kms_master_key_id                 = var.queue_encryption.kms_master_key_id
-  kms_data_key_reuse_period_seconds = var.queue_encryption.kms_data_key_reuse_period_seconds
-
-  tags = var.tags
-}
-
-resource "aws_sqs_queue" "webhook_events_workflow_job_queue" {
-  count                       = var.enable_workflow_job_events_queue ? 1 : 0
-  name                        = "${var.prefix}-webhook_events_workflow_job_queue"
-  delay_seconds               = var.workflow_job_queue_configuration.delay_seconds
-  visibility_timeout_seconds  = var.workflow_job_queue_configuration.visibility_timeout_seconds
-  message_retention_seconds   = var.workflow_job_queue_configuration.message_retention_seconds
-  fifo_queue                  = false
-  receive_wait_time_seconds   = 0
-  content_based_deduplication = false
-  redrive_policy              = null
 
   sqs_managed_sse_enabled           = var.queue_encryption.sqs_managed_sse_enabled
   kms_master_key_id                 = var.queue_encryption.kms_master_key_id
@@ -123,6 +99,7 @@ module "ssm" {
 
 module "webhook" {
   source = "./modules/webhook"
+
   ssm_paths = {
     root    = local.ssm_root_path
     webhook = var.ssm_paths.webhook
@@ -130,6 +107,7 @@ module "webhook" {
   prefix      = var.prefix
   tags        = local.tags
   kms_key_arn = var.kms_key_arn
+  eventbridge = var.eventbridge
 
   runner_matcher_config = {
     (aws_sqs_queue.queued_builds.id) = {
@@ -143,7 +121,6 @@ module "webhook" {
     }
   }
   matcher_config_parameter_store_tier = var.matcher_config_parameter_store_tier
-  sqs_workflow_job_queue              = length(aws_sqs_queue.webhook_events_workflow_job_queue) > 0 ? aws_sqs_queue.webhook_events_workflow_job_queue[0] : null
 
   github_app_parameters = {
     webhook_secret = module.ssm.parameters.github_app_webhook_secret
@@ -293,10 +270,7 @@ module "runners" {
   ssm_housekeeper = var.runners_ssm_housekeeper
   ebs_optimized   = var.runners_ebs_optimized
 
-  metrics_config = {
-    namespace = var.metrics_namespace
-    enable    = var.enable_metrics_control_plane
-  }
+  metrics = var.metrics
 
   job_retry = var.job_retry
 }
@@ -394,9 +368,9 @@ locals {
     logging_retention_in_days = var.logging_retention_in_days
     role_path                 = var.role_path
     role_permissions_boundary = var.role_permissions_boundary
-    metrics_namespace         = var.metrics_namespace
     s3_bucket                 = var.lambda_s3_bucket
     tracing_config            = var.tracing_config
+    metrics                   = var.metrics
   }
 }
 

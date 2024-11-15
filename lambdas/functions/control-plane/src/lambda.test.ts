@@ -1,4 +1,4 @@
-import { captureLambdaHandler, logger } from '@terraform-aws-github-runner/aws-powertools-util';
+import { captureLambdaHandler, logger } from '@aws-github-runner/aws-powertools-util';
 import { Context, SQSEvent, SQSRecord } from 'aws-lambda';
 import { mocked } from 'jest-mock';
 
@@ -66,8 +66,8 @@ jest.mock('./scale-runners/scale-down');
 jest.mock('./scale-runners/scale-up');
 jest.mock('./scale-runners/ssm-housekeeper');
 jest.mock('./scale-runners/job-retry');
-jest.mock('@terraform-aws-github-runner/aws-powertools-util');
-jest.mock('@terraform-aws-github-runner/aws-ssm-util');
+jest.mock('@aws-github-runner/aws-powertools-util');
+jest.mock('@aws-github-runner/aws-ssm-util');
 
 // Docs for testing async with jest: https://jestjs.io/docs/tutorial-async
 describe('Test scale up lambda wrapper.', () => {
@@ -86,7 +86,7 @@ describe('Test scale up lambda wrapper.', () => {
         resolve();
       });
     });
-    expect(await scaleUpHandler(sqsEvent, context)).resolves;
+    await expect(scaleUpHandler(sqsEvent, context)).resolves.not.toThrow();
   });
 
   it('Non scale should resolve.', async () => {
@@ -206,7 +206,7 @@ describe('Test job retry check wrapper', () => {
         resolve();
       });
     });
-    expect(await jobRetryCheck(sqsEvent, context)).resolves;
+    await expect(jobRetryCheck(sqsEvent, context)).resolves.not.toThrow();
   });
 
   it('Handle with error should resolve and log only a warning.', async () => {
@@ -216,7 +216,7 @@ describe('Test job retry check wrapper', () => {
     const error = new Error('Error handling retry check.');
     mock.mockRejectedValue(error);
 
-    expect(await jobRetryCheck(sqsEvent, context)).resolves;
+    await expect(jobRetryCheck(sqsEvent, context)).resolves.not.toThrow();
     expect(logSpyWarn).toHaveBeenCalledWith(expect.stringContaining(error.message), expect.anything());
   });
 });

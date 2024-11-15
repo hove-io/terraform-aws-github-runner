@@ -40,14 +40,6 @@ variable "runner_matcher_config" {
   }
 }
 
-variable "sqs_workflow_job_queue" {
-  description = "SQS queue to monitor github events."
-  type = object({
-    id  = string
-    arn = string
-  })
-  default = null
-}
 variable "lambda_zip" {
   description = "File location of the lambda zip file."
   type        = string
@@ -209,4 +201,17 @@ variable "matcher_config_parameter_store_tier" {
     condition     = contains(["Standard", "Advanced"], var.matcher_config_parameter_store_tier)
     error_message = "`matcher_config_parameter_store_tier` value is not valid, valid values are: `Standard`, and `Advanced`."
   }
+}
+
+variable "eventbridge" {
+  description = <<EOF
+    Enable the use of EventBridge by the module. By enabling this feature events will be put on the EventBridge by the webhook instead of directly dispatching to queues for scaling.
+
+    `enable`: Enable the EventBridge feature.
+    `accept_events`: List can be used to only allow specific events to be putted on the EventBridge. By default all events, empty list will be be interpreted as all events.
+EOF
+  type = object({
+    enable        = optional(bool, false)
+    accept_events = optional(list(string), null)
+  })
 }

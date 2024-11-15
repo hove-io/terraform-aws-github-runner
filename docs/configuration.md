@@ -6,7 +6,7 @@ To be able to support a number of use-cases, the module has quite a lot of confi
 
 - Org vs Repo level. You can configure the module to connect the runners in GitHub on an org level and share the runners in your org, or set the runners on repo level and the module will install the runner to the repo. There can be multiple repos but runners are not shared between repos.
 - Multi-Runner module. This modules allows you to create multiple runner configurations with a single webhook and single GitHub App to simplify deployment of different types of runners. Check the detailed module [documentation](modules/public/multi-runner.md) for more information or checkout the [multi-runner example](examples/multi-runner.md).
-- Workflow job event. You can configure the webhook in GitHub to send workflow job events to the webhook. Workflow job events were introduced by GitHub in September 2021 and are designed to support scalable runners. We advise using the workflow job event when possible.
+- Webhook mode, the module can be deployed in `direct` mode or `EventBridge` (Experimental) mode. The `direct` mode is the default and will directly distribute to SQS for the scale-up lambda. The `EventBridge` mode will publish the events to a eventbus, the rule then directs the received events to a dispatch lambda. The dispatch lambda will send the event to the SQS queue. The `EventBridge` mode is useful when you want to have more control over the events and potentially filter them. The `EventBridge` mode is disabled by default. An example of what the `EventBridge` mode could be used for is building a data lake, build metrics, act on `workflow_job` job started events, etc.
 - Linux vs Windows. You can configure the OS types linux and win. Linux will be used by default.
 - Re-use vs Ephemeral. By default runners are re-used, until detected idle. Once idle they will be removed from the pool. To improve security we are introducing ephemeral runners. Those runners are only used for one job. Ephemeral runners only work in combination with the workflow job event. For ephemeral runners the lambda requests a JIT (just in time) configuration via the GitHub API to register the runner. [JIT configuration](https://docs.github.com/en/actions/security-guides/security-hardening-for-github-actions#using-just-in-time-runners) is limited to ephemeral runners (and currently not supported by GHES). For non-ephemeral runners, a registration token is always requested. In both cases the configuration is made available to the instance via the same SSM parameter. To disable JIT configuration for ephemeral runners set `enable_jit_config` to `false`. We also suggest using a pre-build AMI to improve the start time of jobs for ephemeral runners.
 - Job retry (**Beta**). By default the scale-up lambda will discard the message when it is handled. Meaning in the ephemeral use-case an instance is created. The created runner will ask GitHub for a job, no guarantee it will run the job for which it was scaling. Result could be that with small system hick-up the job is keeping waiting for a runner. Enable a pool (org runners) is one option to avoid this problem. Another option is to enable the job retry function. Which will retry the job after a delay for a configured number of times.
@@ -191,6 +191,15 @@ This feature has been disabled by default.
 
 The watcher will act on all spot termination notificatins and log all onses relevant to the runner module. Therefor we suggest to only deploy the watcher once. You can either deploy the watcher by enabling in one of your deployments or deploy the watcher as a stand alone module.
 
+## Metrics
+
+The module supports metrics (experimental feature) to monitor the system. The metrics are disabled by default. To enable the metrics set `metrics.enable = true`. If set to true, all module managed metrics are used, you can configure the one by one via the `metrics` object. The metrics are created in the namespace `GitHub Runners`.
+
+### Supported metrics
+
+- **GitHubAppRateLimitRemaining**: Remaining rate limit for the GitHub App.
+- **JobRetry**: Number of job retries, only relevant when job retry is enabled.
+- **SpotInterruptionWarning**: Number of spot interruption warnings received by the termination watcher, only relevant when the termination watcher is enabled.
 
 ## Debugging
 
@@ -206,21 +215,35 @@ In case the setup does not work as intended, trace the events through this seque
 
 ### Termination watcher
 
-This feature is in early stage and therefore disabled by default.
+This feature is in early stage and therefore disabled by default. To enable the watcher, set `instance_termination_watcher.enable = true`.
 
-The termination watcher is currently watching for spot termination notifications. The module is only taken events into account for instances tagged with `ghr:environment` by default when deployment the module as part of one of the main modules (root or multi-runner). The module can also be deployed stand-alone, in that case the tag filter needs to be tunned.
+The termination watcher is currently watching for spot terminations. The module is only taken events into account for instances tagged with `ghr:environment` by default when deployment the module as part of one of the main modules (root or multi-runner). The module can also be deployed stand-alone, in this case, the tag filter needs to be tunned.
+
+### Termination notification
+
+The watcher is listening for spot termination warnings and create a log message and optionally a metric. The watcher is disabled by default. The feature is enabled once the watcher is enabled, the feature can be disabled explicit by setting `instance_termination_watcher.features.enable_spot_termination_handler = false`.
 
 - Logs: The module will log all termination notifications. For each warning it will look up instance details and log the environment, instance type and time the instance is running. As well some other details.
 - Metrics: Metrics are disabled by default, this to avoid costs. Once enabled a metric will be created for each warning with at least dimensions for the environment and instance type. THe metric name space can be configured via the variables. The metric name used is `SpotInterruptionWarning`.
 
-#### Log example
+### Termination handler
+
+!!! warning
+    This feature will only work once the CloudTrail is enabled.
+
+The termination handler is listening for spot terminations by capture the `BidEvictedEvent` via CloudTrail. The handler will log and optionally create a metric for each termination. The intend is to enhance the logic to inform the user about the termination via the GitHub Job or Workflow run. The feature is disabled by default. The feature is enabled once the watcher is enabled, the feature can be disabled explicit by setting `instance_termination_watcher.features.enable_spot_termination_handler = false`.
+
+- Logs: The module will log all termination notifications. For each warning it will look up instance details and log the environment, instance type and time the instance is running. As well some other details.
+- Metrics: Metrics are disabled by default, this to avoid costs. Once enabled a metric will be created for each termination with at least dimensions for the environment and instance type. THe metric name space can be configured via the variables. The metric name used is `SpotTermination`.
+
+### Log example (both warnings and terminations)
 
 Below an example of the the log messages created.
 
 ```
 {
     "level": "INFO",
-    "message": "Received spot notification warning:",
+    "message": "Received spot notification for ${metricName}",
     "environment": "default",
     "instanceId": "i-0039b8826b3dcea55",
     "instanceType": "c5.large",
@@ -236,21 +259,132 @@ Below an example of the the log messages created.
 }
 ```
 
-### Queue to publish workflow job events
+### EventBridge
 
-This queue is an experimental feature to allow you to receive a copy of the wokflow_jobs events sent by the GitHub App. This can be used to calculate a matrix or monitor the system.
+This module can be deployed in using the mode `EventBridge` (Experimental). The `EventBridge` mode will publish an event to a eventbus. Within the eventbus, there is a target rule set, sending events to the dispatch lambda. The `EventBridge` mode is disabled by default.
 
-To enable the feature set `enable_workflow_job_events_queue = true`. Be aware though, this feature is experimental!
+Example to use the EventBridge:
 
-Messages received on the queue are using the same format as published by GitHub wrapped in a property `workflowJobEvent`.
+```hcl
 
-```
-export interface GithubWorkflowEvent {
-  workflowJobEvent: WorkflowJobEvent;
+module "runners" {
+  source = "philips-labs/github-runners/aws"
+
+  ...
+  eventbridge = {
+    enable = true
+  }
+  ...
+}
+
+locals {
+  event_bus_name = module.runners.webhook.eventbridge.event_bus.name
+}
+
+resource "aws_cloudwatch_event_rule" "example" {
+  name           = "${local.prefix}-github-events-all"
+  description    = "Caputure all GitHub events"
+  event_bus_name = local.event_bus_name
+  event_pattern  = <<EOF
+{
+  "source": [{
+    "prefix": "github"
+  }]
+}
+EOF
+}
+
+resource "aws_cloudwatch_event_target" "main" {
+  rule           = aws_cloudwatch_event_rule.example.name
+  arn            = <arn of target>
+  event_bus_name = local.event_bus_name
+  role_arn       = aws_iam_role.event_rule_firehose_role.arn
+}
+
+data "aws_iam_policy_document" "event_rule_firehose_role" {
+  statement {
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["events.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "event_rule_role" {
+  name               = "${local.prefix}-eventbridge-github-rule"
+  assume_role_policy = data.aws_iam_policy_document.event_rule_firehose_role.json
+}
+
+data aws_iam_policy_document firehose_stream {
+  statement {
+    INSER_YOUR_POIICY_HERE_TO_ACCESS_THE_TARGET
+  }
+}
+
+resource "aws_iam_role_policy" "event_rule_firehose_role" {
+  name = "target-event-rule-firehose"
+  role = aws_iam_role.event_rule_firehose_role.name
+  policy = data.aws_iam_policy_document.firehose_stream.json
 }
 ```
 
-This extensible format allows more fields to be added if needed.
-You can configure the queue by setting properties to `workflow_job_events_queue_config`
+### Queue to publish workflow job events
+
+!!! warning "Removed
+
+    This feaTure will be removed since we introducing the EventBridge. Same functionality can be implemented by adding a rule to the EventBridge to forward `workflow_job` events to the SQS queue.
+
+Below an example how you can sent all `workflow_job` with action `in_progress` to a SQS queue.
+
+```hcl
+
+resource "aws_cloudwatch_event_rule" "workflow_job_in_progress" {
+  name           = "workflow-job-in-progress"
+  event_bus_name = modules.runners.webhook.eventbridge.name # The name of the event bus output by the module
+
+  event_pattern = <<EOF
+{
+  "detail-type": ["workflow_job"],
+  "detail": {
+    "action": ["in_progress"]
+  }
+}
+EOF
+}
+
+resource "aws_sqs_queue" "workflow_job_in_progress" {
+  name = "workflow_job_in_progress
+}
+
+resource "aws_sqs_queue_policy" "workflow_job_in_progress" {
+  queue_url = aws_sqs_queue.workflow_job_in_progress.id
+  policy    = data.aws_iam_policy_document.sqs_policy.json
+}
+
+data "aws_iam_policy_document" "sqs_policy" {
+  statement {
+    sid     = "AllowFromEventBridge"
+    actions = ["sqs:SendMessage"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["events.amazonaws.com"]
+    }
+
+    resources = [aws_sqs_queue.workflow_job_in_progress.arn]
+
+    condition {
+      test     = "ArnEquals"
+      variable = "aws:SourceArn"
+      values   = [aws_cloudwatch_event_rule.workflow_job_in_progress.arn]
+    }
+  }
+}
+
+```
+
+
 
 NOTE: By default, a runner AMI update requires a re-apply of this terraform config (the runner AMI ID is looked up by a terraform data source). To avoid this, you can use `ami_id_ssm_parameter_name` to have the scale-up lambda dynamically lookup the runner AMI ID from an SSM parameter at instance launch time. Said SSM parameter is managed outside of this module (e.g. by a runner AMI build workflow).

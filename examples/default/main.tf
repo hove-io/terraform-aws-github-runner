@@ -78,7 +78,7 @@ module "runners" {
   # Let the module manage the service linked role
   # create_service_linked_role_spot = true
 
-  instance_types = ["m5.large", "c5.large"]
+  instance_types = ["m7a.large", "m5.large"]
 
   # override delay of events in seconds
   delay_webhook_event   = 5
@@ -89,16 +89,27 @@ module "runners" {
 
   # override scaling down
   scale_down_schedule_expression = "cron(* * * * ? *)"
-  # enable this flag to publish webhook events to workflow job queue
-  # enable_workflow_job_events_queue  = true
 
   enable_user_data_debug_logging_runner = true
 
   # prefix GitHub runners with the environment name
   runner_name_prefix = "${local.environment}_"
 
+  # webhook supports two modes, either direct or via the eventbridge, uncomment to enable eventbridge
+  # eventbridge = {
+  #   enable = true
+  #   # adjust the allow events to only allow specific events, like workflow_job
+  #   # allowed_events = ['workflow_job']
+  # }
+
   # Enable debug logging for the lambda functions
-  log_level = "info"
+  # log_level = "debug"
+
+  # tracing_config = {
+  #   mode                  = "Active"
+  #   capture_error         = true
+  #   capture_http_requests = true
+  # }
 
   enable_ami_housekeeper = true
   ami_housekeeper_cleanup_config = {
@@ -114,20 +125,24 @@ module "runners" {
 
   instance_termination_watcher = {
     enable = true
-    enable_metric = {
-      spot_warning = true
-    }
   }
 
-  # enable job_retry feature. Be careful with this feature, it can lead to API rate limits.
+  # enable metric creation  (experimental)
+  # metrics = {
+  #   enable = true
+  #   metric = {
+  #     enable_spot_termination_warning = true
+  #     enable_job_retry                = false
+  #     enable_github_app_rate_limit    = false
+  #   }
+  # }
+
+  # enable job_retry feature. Be careful with this feature, it can lead to you hitting API rate limits.
   # job_retry = {
   #   enable           = true
   #   max_attempts     = 1
   #   delay_in_seconds = 180
   # }
-
-  # enable metric creation by the control plane (experimental)
-  # enable_metrics_control_plane = true
 
   # enable CMK instead of aws managed key for encryptions
   # kms_key_arn = aws_kms_key.github.arn
