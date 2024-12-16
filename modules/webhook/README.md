@@ -1,14 +1,12 @@
 # Module - GitHub App web hook
 
-This module creates an API gateway endpoint and lambda function to handle GitHub App webhook events.
+> This module is treated as internal module, breaking changes will not trigger a major release bump.
 
-## Usages
-
-Usage examples are available in the root module. By default the root module will assume local zip files containing the lambda distribution are available. See the [download lambda module](../download-lambda/README.md) for more information.
+The module can be deployed in two modes. 'Direct' messages, are delivered directly to the runner queues. 'EventBridge' messages are delivered to an EventBridge bus and then dispatched to the runner queues.
 
 ## Lambda Function
 
-The Lambda function is written in [TypeScript](https://www.typescriptlang.org/) and requires Node 12.x and yarn. Sources are located in [./lambdas/webhook].
+The Lambda function is written in [TypeScript](https://www.typescriptlang.org/) and requires Node and yarn. Sources are located in [./lambdas/webhook]. Check see `lambda.ts` for the different handler functions available.
 
 ### Install
 
@@ -32,24 +30,27 @@ To compile all TypeScript/JavaScript sources in a single file [ncc](https://gith
 ```bash
 yarn run dist
 ```
-
-<!-- BEGINNING OF PRE-COMMIT-TERRAFORM DOCS HOOK -->
+<!-- BEGIN_TF_DOCS -->
 ## Requirements
 
 | Name | Version |
 |------|---------|
-| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 0.14.1 |
-| <a name="requirement_aws"></a> [aws](#requirement\_aws) | ~> 4.0 |
+| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3.0 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | ~> 5.27 |
+| <a name="requirement_null"></a> [null](#requirement\_null) | ~> 3 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_aws"></a> [aws](#provider\_aws) | ~> 4.0 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | ~> 5.27 |
 
 ## Modules
 
-No modules.
+| Name | Source | Version |
+|------|--------|---------|
+| <a name="module_direct"></a> [direct](#module\_direct) | ./direct | n/a |
+| <a name="module_eventbridge"></a> [eventbridge](#module\_eventbridge) | ./eventbridge | n/a |
 
 ## Resources
 
@@ -59,72 +60,47 @@ No modules.
 | [aws_apigatewayv2_integration.webhook](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/apigatewayv2_integration) | resource |
 | [aws_apigatewayv2_route.webhook](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/apigatewayv2_route) | resource |
 | [aws_apigatewayv2_stage.webhook](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/apigatewayv2_stage) | resource |
-| [aws_cloudwatch_log_group.webhook](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/cloudwatch_log_group) | resource |
-| [aws_iam_role.webhook_lambda](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
-| [aws_iam_role_policy.webhook_logging](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
-| [aws_iam_role_policy.webhook_sqs](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
-| [aws_iam_role_policy.webhook_ssm](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
-| [aws_lambda_function.webhook](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_function) | resource |
-| [aws_lambda_permission.webhook](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lambda_permission) | resource |
-| [aws_iam_policy_document.lambda_assume_role_policy](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
+| [aws_ssm_parameter.runner_matcher_config](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ssm_parameter) | resource |
 
 ## Inputs
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| <a name="input_aws_region"></a> [aws\_region](#input\_aws\_region) | AWS region. | `string` | n/a | yes |
-| <a name="input_disable_check_wokflow_job_labels"></a> [disable\_check\_wokflow\_job\_labels](#input\_disable\_check\_wokflow\_job\_labels) | Disable the the check of workflow labels. | `bool` | `false` | no |
-| <a name="input_enable_workflow_job_labels_check"></a> [enable\_workflow\_job\_labels\_check](#input\_enable\_workflow\_job\_labels\_check) | If set to true all labels in the workflow job even are matched agaist the custom labels and GitHub labels (os, architecture and `self-hosted`). When the labels are not matching the event is dropped at the webhook. | `bool` | `false` | no |
-| <a name="input_environment"></a> [environment](#input\_environment) | A name that identifies the environment, used as prefix and for tagging. | `string` | `null` | no |
-| <a name="input_github_app_webhook_secret_arn"></a> [github\_app\_webhook\_secret\_arn](#input\_github\_app\_webhook\_secret\_arn) | n/a | `string` | n/a | yes |
+| <a name="input_aws_partition"></a> [aws\_partition](#input\_aws\_partition) | (optional) partition for the base arn if not 'aws' | `string` | `"aws"` | no |
+| <a name="input_eventbridge"></a> [eventbridge](#input\_eventbridge) | Enable the use of EventBridge by the module. By enabling this feature events will be put on the EventBridge by the webhook instead of directly dispatching to queues for scaling.<br/><br/>    `enable`: Enable the EventBridge feature.<br/>    `accept_events`: List can be used to only allow specific events to be putted on the EventBridge. By default all events, empty list will be be interpreted as all events. | <pre>object({<br/>    enable        = optional(bool, false)<br/>    accept_events = optional(list(string), null)<br/>  })</pre> | n/a | yes |
+| <a name="input_github_app_parameters"></a> [github\_app\_parameters](#input\_github\_app\_parameters) | Parameter Store for GitHub App Parameters. | <pre>object({<br/>    webhook_secret = map(string)<br/>  })</pre> | n/a | yes |
 | <a name="input_kms_key_arn"></a> [kms\_key\_arn](#input\_kms\_key\_arn) | Optional CMK Key ARN to be used for Parameter Store. | `string` | `null` | no |
 | <a name="input_lambda_architecture"></a> [lambda\_architecture](#input\_lambda\_architecture) | AWS Lambda architecture. Lambda functions using Graviton processors ('arm64') tend to have better price/performance than 'x86\_64' functions. | `string` | `"x86_64"` | no |
-| <a name="input_lambda_runtime"></a> [lambda\_runtime](#input\_lambda\_runtime) | AWS Lambda runtime. | `string` | `"nodejs20.x"` | no |
+| <a name="input_lambda_runtime"></a> [lambda\_runtime](#input\_lambda\_runtime) | AWS Lambda runtime. | `string` | `"nodejs14.x"` | no |
 | <a name="input_lambda_s3_bucket"></a> [lambda\_s3\_bucket](#input\_lambda\_s3\_bucket) | S3 bucket from which to specify lambda functions. This is an alternative to providing local files directly. | `any` | `null` | no |
 | <a name="input_lambda_timeout"></a> [lambda\_timeout](#input\_lambda\_timeout) | Time out of the lambda in seconds. | `number` | `10` | no |
 | <a name="input_lambda_zip"></a> [lambda\_zip](#input\_lambda\_zip) | File location of the lambda zip file. | `string` | `null` | no |
 | <a name="input_log_level"></a> [log\_level](#input\_log\_level) | Logging level for lambda logging. Valid values are  'silly', 'trace', 'debug', 'info', 'warn', 'error', 'fatal'. | `string` | `"info"` | no |
-| <a name="input_log_type"></a> [log\_type](#input\_log\_type) | Logging format for lambda logging. Valid values are 'json', 'pretty', 'hidden'. | `string` | `"pretty"` | no |
 | <a name="input_logging_kms_key_id"></a> [logging\_kms\_key\_id](#input\_logging\_kms\_key\_id) | Specifies the kms key id to encrypt the logs with | `string` | `null` | no |
-| <a name="input_logging_retention_in_days"></a> [logging\_retention\_in\_days](#input\_logging\_retention\_in\_days) | Specifies the number of days you want to retain log events for the lambda log group. Possible values are: 0, 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, and 3653. | `number` | `7` | no |
+| <a name="input_logging_retention_in_days"></a> [logging\_retention\_in\_days](#input\_logging\_retention\_in\_days) | Specifies the number of days you want to retain log events for the lambda log group. Possible values are: 0, 1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, and 3653. | `number` | `180` | no |
+| <a name="input_matcher_config_parameter_store_tier"></a> [matcher\_config\_parameter\_store\_tier](#input\_matcher\_config\_parameter\_store\_tier) | The tier of the parameter store for the matcher configuration. Valid values are `Standard`, and `Advanced`. | `string` | `"Standard"` | no |
 | <a name="input_prefix"></a> [prefix](#input\_prefix) | The prefix used for naming resources | `string` | `"github-actions"` | no |
-| <a name="input_repository_white_list"></a> [repository\_white\_list](#input\_repository\_white\_list) | List of repositories allowed to use the github app | `list(string)` | `[]` | no |
+| <a name="input_repository_white_list"></a> [repository\_white\_list](#input\_repository\_white\_list) | List of github repository full names (owner/repo\_name) that will be allowed to use the github app. Leave empty for no filtering. | `list(string)` | `[]` | no |
 | <a name="input_role_path"></a> [role\_path](#input\_role\_path) | The path that will be added to the role; if not set, the environment name will be used. | `string` | `null` | no |
 | <a name="input_role_permissions_boundary"></a> [role\_permissions\_boundary](#input\_role\_permissions\_boundary) | Permissions boundary that will be added to the created role for the lambda. | `string` | `null` | no |
-| <a name="input_runner_labels"></a> [runner\_labels](#input\_runner\_labels) | Extra (custom) labels for the runners (GitHub). Separate each label by a comma. Labels checks on the webhook can be enforced by setting `enable_workflow_job_labels_check`. GitHub read-only labels should not be provided. | `string` | `""` | no |
-| <a name="input_sqs_build_queue"></a> [sqs\_build\_queue](#input\_sqs\_build\_queue) | SQS queue to publish accepted build events. | <pre>object({<br>    id  = string<br>    arn = string<br>  })</pre> | n/a | yes |
-| <a name="input_sqs_build_queue_fifo"></a> [sqs\_build\_queue\_fifo](#input\_sqs\_build\_queue\_fifo) | Enable a FIFO queue to remain the order of events received by the webhook. Suggest to set to true for repo level runners. | `bool` | `false` | no |
+| <a name="input_runner_matcher_config"></a> [runner\_matcher\_config](#input\_runner\_matcher\_config) | SQS queue to publish accepted build events based on the runner type. When exact match is disabled the webhook accepts the event if one of the workflow job labels is part of the matcher. The priority defines the order the matchers are applied. | <pre>map(object({<br/>    arn  = string<br/>    id   = string<br/>    fifo = bool<br/>    matcherConfig = object({<br/>      labelMatchers = list(list(string))<br/>      exactMatch    = bool<br/>      priority      = optional(number, 999)<br/>    })<br/>  }))</pre> | n/a | yes |
+| <a name="input_ssm_paths"></a> [ssm\_paths](#input\_ssm\_paths) | The root path used in SSM to store configuration and secrets. | <pre>object({<br/>    root    = string<br/>    webhook = string<br/>  })</pre> | n/a | yes |
 | <a name="input_tags"></a> [tags](#input\_tags) | Map of tags that will be added to created resources. By default resources will be tagged with name and environment. | `map(string)` | `{}` | no |
-| <a name="input_webhook_lambda_s3_key"></a> [webhook\_lambda\_s3\_key](#input\_webhook\_lambda\_s3\_key) | S3 key for webhook lambda function. Required if using S3 bucket to specify lambdas. | `any` | `null` | no |
-| <a name="input_webhook_lambda_s3_object_version"></a> [webhook\_lambda\_s3\_object\_version](#input\_webhook\_lambda\_s3\_object\_version) | S3 object version for webhook lambda function. Useful if S3 versioning is enabled on source bucket. | `any` | `null` | no |
-| <a name="input_workflow_job_labels_check_all"></a> [workflow\_job\_labels\_check\_all](#input\_workflow\_job\_labels\_check\_all) | If set to true all labels in the workflow job must match the GitHub labels (os, architecture and `self-hosted`). When false if __any__ label matches it will trigger the webhook. `enable_workflow_job_labels_check` must be true for this to take effect. | `bool` | `true` | no |
+| <a name="input_tracing_config"></a> [tracing\_config](#input\_tracing\_config) | Configuration for lambda tracing. | <pre>object({<br/>    mode                  = optional(string, null)<br/>    capture_http_requests = optional(bool, false)<br/>    capture_error         = optional(bool, false)<br/>  })</pre> | `{}` | no |
+| <a name="input_webhook_lambda_apigateway_access_log_settings"></a> [webhook\_lambda\_apigateway\_access\_log\_settings](#input\_webhook\_lambda\_apigateway\_access\_log\_settings) | Access log settings for webhook API gateway. | <pre>object({<br/>    destination_arn = string<br/>    format          = string<br/>  })</pre> | `null` | no |
+| <a name="input_webhook_lambda_s3_key"></a> [webhook\_lambda\_s3\_key](#input\_webhook\_lambda\_s3\_key) | S3 key for webhook lambda function. Required if using S3 bucket to specify lambdas. | `string` | `null` | no |
+| <a name="input_webhook_lambda_s3_object_version"></a> [webhook\_lambda\_s3\_object\_version](#input\_webhook\_lambda\_s3\_object\_version) | S3 object version for webhook lambda function. Useful if S3 versioning is enabled on source bucket. | `string` | `null` | no |
 
 ## Outputs
 
 | Name | Description |
 |------|-------------|
+| <a name="output_dispatcher"></a> [dispatcher](#output\_dispatcher) | n/a |
 | <a name="output_endpoint_relative_path"></a> [endpoint\_relative\_path](#output\_endpoint\_relative\_path) | n/a |
+| <a name="output_eventbridge"></a> [eventbridge](#output\_eventbridge) | n/a |
 | <a name="output_gateway"></a> [gateway](#output\_gateway) | n/a |
 | <a name="output_lambda"></a> [lambda](#output\_lambda) | n/a |
+| <a name="output_lambda_log_group"></a> [lambda\_log\_group](#output\_lambda\_log\_group) | n/a |
 | <a name="output_role"></a> [role](#output\_role) | n/a |
-<!-- END OF PRE-COMMIT-TERRAFORM DOCS HOOK -->
-
-## Philips Forest
-
-This module is part of the Philips Forest.
-
-```
-
-                                                     ___                   _
-                                                    / __\__  _ __ ___  ___| |_
-                                                   / _\/ _ \| '__/ _ \/ __| __|
-                                                  / / | (_) | | |  __/\__ \ |_
-                                                  \/   \___/|_|  \___||___/\__|
-
-                                                                 Infrastructure
-
-```
-
-Talk to the forestkeepers in the `forest`-channel on Slack.
-
-[![Slack](https://philips-software-slackin.now.sh/badge.svg)](https://philips-software-slackin.now.sh)
+| <a name="output_webhook"></a> [webhook](#output\_webhook) | n/a |
+<!-- END_TF_DOCS -->

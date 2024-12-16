@@ -1,5 +1,5 @@
 locals {
-  lambda_zip = var.lambda_zip == null ? "${path.module}/lambdas/runner-binaries-syncer/runner-binaries-syncer.zip" : var.lambda_zip
+  lambda_zip = var.lambda_zip == null ? "${path.module}/../../lambdas/functions/gh-agent-syncer/runner-binaries-syncer.zip" : var.lambda_zip
   role_path  = var.role_path == null ? "/${var.prefix}/" : var.role_path
   gh_binary_os_label = {
     windows = "win",
@@ -18,20 +18,23 @@ resource "aws_lambda_function" "syncer" {
   handler           = "index.handler"
   runtime           = var.lambda_runtime
   timeout           = var.lambda_timeout
-  memory_size       = 256
+  memory_size       = var.lambda_memory_size
   architectures     = [var.lambda_architecture]
 
   environment {
     variables = {
-      GITHUB_RUNNER_ALLOW_PRERELEASE_BINARIES = var.runner_allow_prerelease_binaries
-      GITHUB_RUNNER_ARCHITECTURE              = var.runner_architecture
-      GITHUB_RUNNER_OS                        = local.gh_binary_os_label[var.runner_os]
-      LOG_LEVEL                               = var.log_level
-      LOG_TYPE                                = var.log_type
-      S3_BUCKET_NAME                          = aws_s3_bucket.action_dist.id
-      S3_OBJECT_KEY                           = local.action_runner_distribution_object_key
-      S3_SSE_ALGORITHM                        = try(var.server_side_encryption_configuration.rule.apply_server_side_encryption_by_default.sse_algorithm, null)
-      S3_SSE_KMS_KEY_ID                       = try(var.server_side_encryption_configuration.rule.apply_server_side_encryption_by_default.kms_master_key_id, null)
+      ENVIRONMENT                              = var.prefix
+      GITHUB_RUNNER_ARCHITECTURE               = var.runner_architecture
+      GITHUB_RUNNER_OS                         = local.gh_binary_os_label[var.runner_os]
+      LOG_LEVEL                                = var.log_level
+      POWERTOOLS_LOGGER_LOG_EVENT              = var.log_level == "debug" ? "true" : "false"
+      POWERTOOLS_TRACE_ENABLED                 = var.tracing_config.mode != null ? true : false
+      POWERTOOLS_TRACER_CAPTURE_HTTPS_REQUESTS = var.tracing_config.capture_http_requests
+      POWERTOOLS_TRACER_CAPTURE_ERROR          = var.tracing_config.capture_error
+      S3_BUCKET_NAME                           = aws_s3_bucket.action_dist.id
+      S3_OBJECT_KEY                            = local.action_runner_distribution_object_key
+      S3_SSE_ALGORITHM                         = try(var.server_side_encryption_configuration.rule.apply_server_side_encryption_by_default.sse_algorithm, null)
+      S3_SSE_KMS_KEY_ID                        = try(var.server_side_encryption_configuration.rule.apply_server_side_encryption_by_default.kms_master_key_id, null)
     }
   }
 
@@ -43,7 +46,14 @@ resource "aws_lambda_function" "syncer" {
     }
   }
 
-  tags = var.tags
+  tags = merge(var.tags, var.lambda_tags)
+
+  dynamic "tracing_config" {
+    for_each = var.tracing_config.mode != null ? [true] : []
+    content {
+      mode = var.tracing_config.mode
+    }
+  }
 }
 
 resource "aws_iam_role_policy" "lambda_kms" {
@@ -93,7 +103,7 @@ data "aws_iam_policy_document" "lambda_assume_role_policy" {
 }
 
 resource "aws_iam_role_policy" "lambda_logging" {
-  name = "${var.prefix}-lambda-logging-policy-syncer"
+  name = "logging-policys"
   role = aws_iam_role.syncer_lambda.id
 
   policy = templatefile("${path.module}/policies/lambda-cloudwatch.json", {
@@ -102,7 +112,7 @@ resource "aws_iam_role_policy" "lambda_logging" {
 }
 
 resource "aws_iam_role_policy" "syncer" {
-  name = "${var.prefix}-lambda-syncer-s3-policy"
+  name = "s3-policy"
   role = aws_iam_role.syncer_lambda.id
 
   policy = templatefile("${path.module}/policies/lambda-syncer.json", {
@@ -114,11 +124,18 @@ resource "aws_cloudwatch_event_rule" "syncer" {
   name                = "${var.prefix}-syncer-rule"
   schedule_expression = var.lambda_schedule_expression
   tags                = var.tags
+  state               = var.state_event_rule_binaries_syncer
 }
 
 resource "aws_cloudwatch_event_target" "syncer" {
   rule = aws_cloudwatch_event_rule.syncer.name
   arn  = aws_lambda_function.syncer.arn
+}
+
+resource "aws_iam_role_policy_attachment" "syncer_vpc_execution_role" {
+  count      = length(var.lambda_subnet_ids) > 0 ? 1 : 0
+  role       = aws_iam_role.syncer_lambda.name
+  policy_arn = "arn:${var.aws_partition}:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
 resource "aws_lambda_permission" "syncer" {
@@ -165,4 +182,11 @@ resource "aws_lambda_permission" "on_deploy" {
   principal      = "s3.amazonaws.com"
   source_account = data.aws_caller_identity.current.account_id
   source_arn     = aws_s3_bucket.action_dist.arn
+}
+
+resource "aws_iam_role_policy" "syncer_lambda_xray" {
+  count  = var.tracing_config.mode != null ? 1 : 0
+  name   = "xray-policy"
+  policy = data.aws_iam_policy_document.lambda_xray[0].json
+  role   = aws_iam_role.syncer_lambda.name
 }

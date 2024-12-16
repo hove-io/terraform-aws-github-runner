@@ -1,4 +1,22 @@
+variable "github_app" {
+  description = "GitHub for API usages."
 
-variable "github_app_key_base64" {}
+  type = object({
+    id         = string
+    key_base64 = string
+  })
+}
 
-variable "github_app_id" {}
+variable "environment" {
+  description = "Environment name, used as prefix."
+
+  type    = string
+  default = null
+}
+
+variable "aws_region" {
+  description = "AWS region."
+
+  type    = string
+  default = "eu-west-1"
+}

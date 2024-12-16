@@ -7,16 +7,21 @@ packer {
   }
 }
 
-variable "action_runner_url" {
-  description = "The URL to the tarball of the action runner"
-  type        = string
-  default     = "https://github.com/actions/runner/releases/download/v2.285.1/actions-runner-win-x64-2.285.1.zip"
+variable "runner_version" {
+  description = "The version (no v prefix) of the runner software to install https://github.com/actions/runner/releases. The latest release will be fetched from GitHub if not provided."
+  default     = null
 }
 
 variable "region" {
   description = "The region to build the image in"
   type        = string
   default     = "eu-west-1"
+}
+
+variable "instance_type" {
+  description = "The instance type Packer will use for the builder"
+  type        = string
+  default     = "t3a.medium"
 }
 
 variable "ebs_delete_on_termination" {
@@ -37,12 +42,31 @@ variable "custom_shell_commands" {
   default     = []
 }
 
+variable "temporary_security_group_source_public_ip" {
+  description = "When enabled, use public IP of the host (obtained from https://checkip.amazonaws.com) as CIDR block to be authorized access to the instance, when packer is creating a temporary security group. Note: If you specify `security_group_id` then this input is ignored."
+  type        = bool
+  default     = false
+}
+
+data "http" github_runner_release_json {
+  url = "https://api.github.com/repos/actions/runner/releases/latest"
+  request_headers = {
+    Accept = "application/vnd.github+json"
+    X-GitHub-Api-Version : "2022-11-28"
+  }
+}
+
+locals {
+  runner_version = coalesce(var.runner_version, trimprefix(jsondecode(data.http.github_runner_release_json.body).tag_name, "v"))
+}
+
 source "amazon-ebs" "githubrunner" {
-  ami_name                    = "github-runner-windows-core-2019-${formatdate("YYYYMMDDhhmm", timestamp())}"
-  communicator                = "winrm"
-  instance_type               = "t3a.medium"
-  region                      = var.region
-  associate_public_ip_address = var.associate_public_ip_address
+  ami_name                                  = "github-runner-windows-core-2019-${formatdate("YYYYMMDDhhmm", timestamp())}"
+  communicator                              = "winrm"
+  instance_type                             = var.instance_type
+  region                                    = var.region
+  associate_public_ip_address               = var.associate_public_ip_address
+  temporary_security_group_source_public_ip = var.temporary_security_group_source_public_ip
 
   source_ami_filter {
     filters = {
@@ -86,8 +110,12 @@ build {
   provisioner "powershell" {
     inline = concat([
       templatefile("./windows-provisioner.ps1", {
-        action_runner_url = var.action_runner_url
+        action_runner_url = "https://github.com/actions/runner/releases/download/v${local.runner_version}/actions-runner-win-x64-${local.runner_version}.zip"
       })
     ], var.custom_shell_commands)
+  }
+  post-processor "manifest" {
+    output     = "manifest.json"
+    strip_path = true
   }
 }

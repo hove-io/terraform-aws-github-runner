@@ -1,4 +1,8 @@
+variable "github_app" {
+  description = "GitHub App for API usages."
 
-variable "github_app_key_base64" {}
-
-variable "github_app_id" {}
+  type = object({
+    id         = string
+    key_base64 = string
+  })
+}

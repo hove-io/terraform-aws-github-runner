@@ -1,19 +1,22 @@
+variable "github_app" {
+  description = "GitHub for API usages."
 
-variable "github_app_key_base64" {}
-
-variable "github_app_id" {}
+  type = object({
+    id         = string
+    key_base64 = string
+  })
+}
 
 variable "runner_os" {
+  description = "The EC2 Operating System type to use for action runner instances (linux,windows)."
+
   type    = string
   default = "linux"
 }
 
 variable "ami_name_filter" {
-  type    = string
-  default = "github-runner-amzn2-x86_64-*"
-}
+  description = "AMI name filter for the action runner AMI. By default amazon linux 2 is used."
 
-variable "aws_region" {
   type    = string
-  default = "eu-west-1"
+  default = "github-runner-al2023-x86_64-*"
 }

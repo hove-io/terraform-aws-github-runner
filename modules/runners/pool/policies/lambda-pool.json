@@ -22,9 +22,22 @@
         {
             "Effect": "Allow",
             "Action": [
+                "ssm:AddTagsToResource",
                 "ssm:PutParameter"
             ],
             "Resource": "*"
+        },
+        {
+          "Effect": "Allow",
+          "Action": [
+            "ssm:GetParameter",
+            "ssm:GetParameters",
+            "ssm:GetParametersByPath"
+          ],
+          "Resource": [
+            "${arn_ssm_parameters_path_config}",
+            "${arn_ssm_parameters_path_config}/*"
+          ]
         },
         {
             "Effect": "Allow",
@@ -43,6 +56,29 @@
                 "kms:Decrypt"
             ],
             "Resource": "${kms_key_arn}"
+%{ endif ~}
+%{ if ami_kms_key_arn != "" ~}
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kms:DescribeKey",
+                "kms:ReEncrypt*",
+                "kms:Decrypt"
+            ],
+            "Resource": "${ami_kms_key_arn}"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kms:CreateGrant"
+            ],
+            "Resource": "${ami_kms_key_arn}",
+            "Condition": {
+                "Bool": {
+                    "aws:ViaAWSService": "true"
+                }
+            }
 %{ endif ~}
         }
     ]

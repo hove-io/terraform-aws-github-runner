@@ -12,12 +12,20 @@ resource "random_id" "random" {
 ### Hybrid account
 ################################################################################
 
+module "base" {
+  source = "../base"
+
+  prefix     = local.environment
+  aws_region = local.aws_region
+}
+
+
 module "runners" {
   source                          = "../../"
   create_service_linked_role_spot = true
   aws_region                      = local.aws_region
-  vpc_id                          = module.vpc.vpc_id
-  subnet_ids                      = module.vpc.private_subnets
+  vpc_id                          = module.base.vpc.vpc_id
+  subnet_ids                      = module.base.vpc.private_subnets
 
   prefix = local.environment
   tags = {
@@ -25,19 +33,19 @@ module "runners" {
   }
 
   github_app = {
-    key_base64     = var.github_app_key_base64
-    id             = var.github_app_id
+    key_base64     = var.github_app.key_base64
+    id             = var.github_app.id
     webhook_secret = random_id.random.hex
   }
 
   # Grab zip files via lambda_download, will automatically get the ARM64 build
-  webhook_lambda_zip                = "lambdas-download/webhook.zip"
-  runner_binaries_syncer_lambda_zip = "lambdas-download/runner-binaries-syncer.zip"
-  runners_lambda_zip                = "lambdas-download/runners.zip"
+  webhook_lambda_zip                = "../lambdas-download/webhook.zip"
+  runner_binaries_syncer_lambda_zip = "../lambdas-download/runner-binaries-syncer.zip"
+  runners_lambda_zip                = "../lambdas-download/runners.zip"
 
   enable_organization_runners = false
   # Runners will automatically get the "arm64" label
-  runner_extra_labels = "default,example"
+  runner_extra_labels = ["default", "example"]
 
   # enable access to the runners via SSM
   enable_ssm_on_runners = true
@@ -50,6 +58,9 @@ module "runners" {
   #     }
   #   }
   # }
+
+  # enable S3 versioning for runners S3 bucket
+  # runner_binaries_s3_versioning = "Enabled"
 
   # Uncommet idle config to have idle runners from 9 to 5 in time zone Amsterdam
   # idle_config = [{
@@ -70,8 +81,19 @@ module "runners" {
   runners_maximum_count = 1
 
   # set up a fifo queue to remain order
-  fifo_build_queue = true
+  enable_fifo_build_queue = true
 
   # override scaling down
   scale_down_schedule_expression = "cron(* * * * ? *)"
+}
+
+module "webhook_github_app" {
+  source = "../../modules/webhook-github-app"
+
+  github_app = {
+    key_base64     = var.github_app.key_base64
+    id             = var.github_app.id
+    webhook_secret = random_id.random.hex
+  }
+  webhook_endpoint = module.runners.webhook.endpoint
 }

@@ -7,17 +7,24 @@ resource "random_id" "random" {
   byte_length = 20
 }
 
+module "base" {
+  source = "../base"
+
+  prefix     = local.environment
+  aws_region = local.aws_region
+}
+
 module "runners" {
   source = "../../"
 
   aws_region = local.aws_region
-  vpc_id     = module.vpc.vpc_id
-  subnet_ids = module.vpc.private_subnets
+  vpc_id     = module.base.vpc.vpc_id
+  subnet_ids = module.base.vpc.private_subnets
   prefix     = local.environment
 
   github_app = {
-    key_base64     = var.github_app_key_base64
-    id             = var.github_app_id
+    key_base64     = var.github_app.key_base64
+    id             = var.github_app.id
     webhook_secret = random_id.random.hex
   }
 
@@ -28,7 +35,7 @@ module "runners" {
 
   enable_organization_runners = false
   # no need to add extra windows tag here as it is automatically added by GitHub
-  runner_extra_labels = "default,example"
+  runner_extra_labels = ["default", "example"]
 
   # Set the OS to Windows
   runner_os = "windows"
@@ -45,4 +52,16 @@ module "runners" {
 
   # override scaling down for testing
   scale_down_schedule_expression = "cron(* * * * ? *)"
+}
+
+module "webhook_github_app" {
+  source     = "../../modules/webhook-github-app"
+  depends_on = [module.runners]
+
+  github_app = {
+    key_base64     = var.github_app.key_base64
+    id             = var.github_app.id
+    webhook_secret = random_id.random.hex
+  }
+  webhook_endpoint = module.runners.webhook.endpoint
 }
