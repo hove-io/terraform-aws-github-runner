@@ -259,3 +259,7 @@ resource "aws_resourcegroups_group" "resourcegroups_group" {
     })
   }
 }
+
+output "webhook_endpoint" {
+  value = module.runners.webhook.endpoint
+}
