@@ -61,4 +61,11 @@ resource "aws_iam_role_policy" "ec2" {
   policy = templatefile("${path.module}/policies/instance-ec2.json", {})
 }
 
+resource "aws_iam_role_policy" "ec2_image_builder" {
+  name   = "ec2-image-builder"
+  role   = aws_iam_role.runner.name
+  policy = templatefile("${path.module}/policies/instance-ec2-image-builder.json", {})
+}
+
+
 // see also logging.tf for logging and metrics policies
