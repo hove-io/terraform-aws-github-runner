@@ -3,7 +3,10 @@
   "Statement": [
     {
       "Effect": "Allow",
-      "Action": "imagebuilder:StartImagePipelineExecution",
+      "Action": [
+        "imagebuilder:StartImagePipelineExecution",
+        "imagebuilder:GetComponent"
+      ],
       "Resource": "*"
     }
   ]
