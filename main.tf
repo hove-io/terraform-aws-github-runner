@@ -1,6 +1,10 @@
 locals {
   tags = merge(var.tags, {
     "ghr:environment" = var.prefix
+    "platfom"         = "landing-zone"
+    "solution"        = "infra"
+    "component"       = "github-runner"
+    "terraform-stack" = "https://github.com/hove-io/terraform-aws-github-runner"
   })
 
   s3_action_runner_url = "s3://${module.runner_binaries.bucket.id}/${module.runner_binaries.runner_distribution_object_key}"
