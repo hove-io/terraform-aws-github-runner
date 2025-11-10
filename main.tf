@@ -2,7 +2,7 @@ locals {
   tags = merge(var.tags, {
     "ghr:environment" = var.prefix
     "platfom"         = "landing-zone"
-    "solution"        = "hove"
+    "solution"        = "infra"
     "component"       = "github-runner"
     "terraform-stack" = "https://github.com/hove-io/terraform-aws-github-runner"
   })
